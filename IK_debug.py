@@ -63,10 +63,73 @@ def test_code(test_case):
     ## 
 
     ## Insert IK code here!
+    # working with lists would make it easier latter on
+    q_s = symbols('q1:8', real=True)
+    d_s = symbols('d1:8', real=True)
+    a_s = symbols('a0:7', real=True)
+    alpha_s = symbols('alpha0:7', real=True)
+
+    alpha = [0.0, -pi/2, 0.0, -pi/2, pi/2, -pi/2, 0.0]
+    a = [0.0, 0.35, 1.25, -0.054, 0.0, 0.0, 0.0]
+    d = [0.75, 0.0, 0.0, 1.5, 0.0, 0.0, 0.303]
+    q = list(q_s)
+    q[1] = q_s[1] - pi/2
+    q[6] = 0.0
+    dh = dict(zip(a_s, a))
+    dh.update(dict(zip(alpha_s, alpha)))
+    dh.update(dict(zip(d_s, d)))
+    dh.update(dict(zip(q_s, q)))
+    def transform(alpha, a, d, q):
+        """
+        Helper function. Given the values for a tranformation between two joints it returns
+        the tranformation matrix
+        """
+        T = Matrix([[cos(q), -sin(q), 0.0, a],
+                    [sin(q) * cos(alpha), cos(q) * cos(alpha), -sin(alpha), -sin(alpha) * d],
+                    [sin(q) * sin(alpha), cos(q) * sin(alpha),  cos(alpha),  cos(alpha) * d],
+                    [0.0, 0.0, 0.0, 1.0]])
+        return T
+    # list of transformations
+    T_s = []
+    for alpha, a, d, q in zip(alpha_s, a_s, d_s, q_s):
+        T_s.append(transform(alpha, a, d, q).subs(dh))
+    rot_1, rot_2, rot_3 = symbols('rot_1:4')
+    R_x = Matrix([[ 1, 0, 0],
+                [ 0, cos(rot_1), -sin(rot_1)],
+                [ 0, sin(rot_1),  cos(rot_1)]])
+    R_y = Matrix([[ cos(rot_2), 0, sin(rot_2)],
+                [ 0, 1, 0],
+                [-sin(rot_2), 0,  cos(rot_2)]])
+    R_z = Matrix([[ cos(rot_3), -sin(rot_3), 0],
+                [ sin(rot_3),  cos(rot_3), 0],
+                [ 0, 0, 1]])
     
-    theta1 = 0
-    theta2 = 0
-    theta3 = 0
+    # Transform matrix from origen to wrist
+    T_0_4 = T_s[0] * T_s[1] * T_s[2] * T_s[3]
+    org = Matrix([0.0, 0.0, 0.0, 1.0])
+    # wrist center as variable
+    x_wc = symbols(('x_wc', 'y_wc', 'z_wc'), real=True)
+    wrist_center = Matrix(x_wc).row_insert(3, Matrix([1.0]))
+    theta_1 = atan2(x_wc[1], x_wc[0])
+    # Two sides of the triangle come directly from the DH table
+    side_a = 1.501 # sqrt(d4 ** 2 + a3 **2)
+    side_c = 1.25 # a2
+    # point at joint 2:
+    x_p2 = (T_s[0] * origin).subs(q_s[0], theta_1)
+    # Distance vector between joint and wrist
+    distance = (wrist_center - x_p2)
+    side_b = simplify((distance.transpose() * distance)[0])
+    # apply law of cosines to solve angles:
+    alpha = acos(((side_b ** 2) + (side_c ** 2) - (side_a ** 2)) / (2 * (side_b + side_c)))
+    beta = acos(((side_a ** 2) + (side_c ** 2) - (side_b ** 2)) / (2 * (side_a + side_c)))
+    gamma = acos(((side_b ** 2) + (side_a ** 2) - (side_c ** 2)) / (2 * (side_b + side_a)))
+    # solve relations based on distances and angles
+    theta_2 = pi / 2 - alpha - atan2(distance[2], sqrt(simplify(distance[0] ** 2 + distance[1] ** 2)))
+    theta_3 = pi / 2 - beta + 0.036
+    ik_test = dict(zip(x_wc, position))
+    theta1 = theta_1.subs(ik_test)
+    theta2 = theta_2.subs(ik_test)
+    theta3 = theta_3.subs(ik_test)
     theta4 = 0
     theta5 = 0
     theta6 = 0
@@ -79,13 +142,28 @@ def test_code(test_case):
     ## as the input and output the position of your end effector as your_ee = [x,y,z]
 
     ## (OPTIONAL) YOUR CODE HERE!
+    # total transform
+    T = Matrix.eye(4)
+    for t in T_s:
+        T *= t
+    
+    T_wc = Matrix.eye(4)
+    for t in T_s[:4]:
+        T_wc *= t
+    
+    # Correction matrix in homogeneous form
+    corr = (R_z.subs(rot_3, pi) * R_y.subs(rot_2, -pi/2))
+    corr = corr.row_insert(3, Matrix([0,0,0]).transpose())
+    corr = corr.col_insert(3, Matrix([0,0,0,1]))
+    corrected_T = (T.subs(conf) * corr)
+    origin = Matrix([0.0, 0.0, 0.0, 1.0])
 
     ## End your code input for forward kinematics here!
     ########################################################################################
 
     ## For error analysis please set the following variables of your WC location and EE location in the format of [x,y,z]
-    your_wc = [1,1,1] # <--- Load your calculated WC values in this array
-    your_ee = [1,1,1] # <--- Load your calculated end effector value from your forward kinematics
+    your_wc = (T_wc * origin)[:3] # <--- Load your calculated WC values in this array
+    your_ee = (corrected_T * origin)[:3] # <--- Load your calculated end effector value from your forward kinematics
     ########################################################################################
 
     ## Error analysis
