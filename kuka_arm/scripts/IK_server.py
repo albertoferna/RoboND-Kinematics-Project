@@ -25,12 +25,13 @@ def handle_calculate_IK(req):
         print "No valid poses received"
         return -1
     else:
-		
         ### Your FK code here
         # Create symbols
-	#
-	#   
-	# Create Modified DH parameters
+        q_s = symbols('q1:8')
+        d_s = symbols('d1:8')
+        a_s = symbols('a0:7')
+        alpha_s = symbols('alpha0:7')
+        # Create Modified DH parameters
 	#
 	#            
 	# Define Modified DH Transformation matrix
