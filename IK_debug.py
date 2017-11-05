@@ -67,27 +67,6 @@ def test_code(test_case):
     ## 
 
     ## Insert IK code here!
-    """# Set needed symbols
-    # working with lists would make it easier latter on
-    q_s = symbols('q1:8', real=True)
-    d_s = symbols('d1:8', real=True)
-    a_s = symbols('a0:7', real=True)
-    alpha_s = symbols('alpha0:7', real=True)
-    # wrist center as homogeneous transform
-    x_wc = symbols(('x_wc', 'y_wc', 'z_wc'), real=True)
-    wrist_center = Matrix(x_wc).row_insert(3, Matrix([1.0]))
-    # DH Table configuration
-    alpha = [0.0, -pi/2, 0.0, -pi/2, pi/2, -pi/2, 0.0]
-    a = [0.0, 0.35, 1.25, -0.054, 0.0, 0.0, 0.0]
-    d = [0.75, 0.0, 0.0, 1.5, 0.0, 0.0, 0.303]
-    q = list(q_s)
-    q[1] = q_s[1] - pi/2
-    q[6] = 0.0
-    dh = dict(zip(a_s, a))
-    dh.update(dict(zip(alpha_s, alpha)))
-    dh.update(dict(zip(d_s, d)))
-    dh.update(dict(zip(q_s, q)))"""
-
     # Effector orientation. Transform quaternion into roll, pitch, yaw
     (roll, pitch, yaw) = tf.transformations.euler_from_quaternion(
                 [req.poses[x].orientation.x, req.poses[x].orientation.y,
@@ -136,7 +115,8 @@ def test_code(test_case):
     theta6 = float(atan2(-T_3_E[1, 1], T_3_E[1, 0]))
     # update ik_conf
     ik_conf.update(dict(zip(q_s[3:6], [float(theta4), float(theta5), float(theta6)])))
-
+    global total_time
+    total_time += (time()-start_time)
     ## 
     ########################################################################################
     
@@ -295,4 +275,12 @@ if __name__ == "__main__":
     T_0_3 = Ts[0] * Ts[1] * Ts[2]
     get_T_0_3 = lambdify(q_s[0:3], T_0_3, 'numpy')
     
-    test_code(test_cases[test_case_number])
+    # test_code(test_cases[test_case_number])
+    # loop to check speed
+    total_time = 0.0
+    for i in range(0, 50):
+        print('check case ' + str(i%4 + 1))
+        test_code(test_cases[i%4 + 1])
+    
+    print ("\nCumulative time for repeated tests: %04.4f seconds" % total_time)
+    print ("\nMean time per case: %04.4f seconds" % (total_time / 50))
