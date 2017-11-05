@@ -2,6 +2,7 @@ from sympy import *
 from time import time
 from mpmath import radians
 import tf
+import numpy as np
 
 '''
 Format of test case is [ [[EE position],[EE orientation as quaternions]],[WC location],[joint angles]]
@@ -22,7 +23,10 @@ test_cases = {1:[[[2.16135,-1.42635,1.55109],
                   [0.01735,-0.2179,0.9025,0.371016]],
                   [-1.1669,-0.17989,0.85137],
                   [-2.99,-0.12,0.94,4.06,1.29,-4.12]],
-              4:[],
+              4:[[[0.743086, -0.618487, 0.0619249],
+                  [0.684884,-0.510046, -0.34054, -0.393472]],
+                  [1.89451046, -1.44302032, 1.69366545],
+                  [-0.630919088657, 0.5503197815830001, 1.1023063526474997, -5.9156191294200005, -0.59952061455, -2.68658539149]],
               5:[]}
 
 
@@ -63,19 +67,7 @@ def test_code(test_case):
     ## 
 
     ## Insert IK code here!
-    def transform(alpha, a, d, q):
-        """
-        Helper function. Given the values for a tranformation between two joints it returns
-        the tranformation matrix
-        """
-        T = Matrix([[cos(q), -sin(q), 0.0, a],
-                    [sin(q) * cos(alpha), cos(q) * cos(alpha), -sin(alpha), -sin(alpha) * d],
-                    [sin(q) * sin(alpha), cos(q) * sin(alpha),  cos(alpha),  cos(alpha) * d],
-                    [0.0, 0.0, 0.0, 1.0]])
-        return T
-    # base frame of reference:
-    origin = Matrix([0.0, 0.0, 0.0, 1.0])
-    # Set needed symbols
+    """# Set needed symbols
     # working with lists would make it easier latter on
     q_s = symbols('q1:8', real=True)
     d_s = symbols('d1:8', real=True)
@@ -94,25 +86,7 @@ def test_code(test_case):
     dh = dict(zip(a_s, a))
     dh.update(dict(zip(alpha_s, alpha)))
     dh.update(dict(zip(d_s, d)))
-    dh.update(dict(zip(q_s, q)))
-    # end effector symbols:
-    roll_s = symbols('r', real=True)
-    pitch_s = symbols('p', real=True)
-    yaw_s = symbols('y', real=True)
-    ee_x = symbols('ee_x', real=True)
-    ee_y = symbols('ee_y', real=True)
-    ee_z = symbols('ee_z', real=True)
-    # Generic rotation matrices:
-    rot_1, rot_2, rot_3 = symbols('rot_1:4')
-    R_x = Matrix([[ 1, 0, 0],
-                [ 0, cos(rot_1), -sin(rot_1)],
-                [ 0, sin(rot_1),  cos(rot_1)]])
-    R_y = Matrix([[ cos(rot_2), 0, sin(rot_2)],
-                [ 0, 1, 0],
-                [-sin(rot_2), 0,  cos(rot_2)]])
-    R_z = Matrix([[ cos(rot_3), -sin(rot_3), 0],
-                [ sin(rot_3),  cos(rot_3), 0],
-                [ 0, 0, 1]])
+    dh.update(dict(zip(q_s, q)))"""
 
     # Effector orientation. Transform quaternion into roll, pitch, yaw
     (roll, pitch, yaw) = tf.transformations.euler_from_quaternion(
@@ -120,54 +94,42 @@ def test_code(test_case):
                     req.poses[x].orientation.z, req.poses[x].orientation.w])
     
     # inverse kinematics configuration:
-    ik_conf = {ee_x: req.poses[x].position.x, ee_y: req.poses[x].position.y, ee_z: req.poses[x].position.z,
-               roll_s: roll, pitch_s: pitch, yaw_s: yaw}
+    ik_conf = {'ee_x': req.poses[x].position.x, 'ee_y': req.poses[x].position.y, 'ee_z': req.poses[x].position.z,
+               'roll': roll, 'pitch': pitch, 'yaw': yaw}
 
     # Calculate position of wrist center
-    # Correction of orientation difference between urdf and DH:
-    corr = (R_z.subs(rot_3, pi) * R_y.subs(rot_2, -pi/2))
-    corr = corr.row_insert(3, Matrix([0,0,0]).transpose())
-    corr = corr.col_insert(3, Matrix([0,0,0,1]))
     # Transform from 0 to end effector:
-    T_0_eff = R_z.subs(rot_3, yaw) * R_y.subs(rot_2, pitch) * R_x.subs(rot_1, roll)
-    T_0_eff = T_0_eff.row_insert(3, Matrix([0, 0, 0]).transpose())
-    T_0_eff = T_0_eff.col_insert(3, Matrix([ee_x, ee_y, ee_z,1])) * corr
-    wrist_position = T_0_eff * Matrix([0.0, 0.0, -0.303, 1.0])
-    wc_pos = wrist_position.subs(ik_conf)
+    T_0_eff = np.zeros((4, 4))
+    T_0_eff[:3, :3] = calc_orient(roll, pitch, yaw)
+    T_0_eff[:, 3] = np.array([ik_conf['ee_x' ], ik_conf['ee_y'], ik_conf['ee_z'], 1.0])
+    T_0_eff = np.dot(T_0_eff, corr)
+    wc_pos = np.dot(T_0_eff, np.array([0.0, 0.0, -0.303, 1.0]))
     ik_conf.update(dict(zip(x_wc, list(wc_pos[:3]))))
-    # list of transformations
-    T_s = []
-    for alpha, a, d, q in zip(alpha_s, a_s, d_s, q_s):
-        T_s.append(transform(alpha, a, d, q).subs(dh))
-
-    theta_1 = atan2(x_wc[1], x_wc[0])
+    theta1 = np.arctan2(wc_pos[1], wc_pos[0])
     # Two sides of the triangle come directly from the DH table
     side_b = 1.501 # sqrt(d4 ** 2 + a3 **2)
     side_a = 1.25 # a2
     # point at joint 2:
-    x_p2 = (T_s[0] * T_s[1] * origin).subs(q_s[0], theta_1)
+    x_p2 = get_point2(theta1)
     # Distance vector between joint and wrist
-    distance = (wrist_center - x_p2)
-    # It is simpler to keep the square here. Apply sqrt to cos law
-    side_c_sq = simplify((distance.transpose() * distance)[0])
+    distance = (wc_pos - x_p2[:,0])
+    # calculate side c
+    side_c = np.linalg.norm(distance)
     # apply law of cosines to solve angles:
-    alpha = acos((side_b ** 2 + side_c_sq - side_a ** 2) / (2 * side_b * sqrt(side_c_sq)))
-    beta = acos((side_a ** 2 + side_c_sq - side_b ** 2) / (2 * side_a * sqrt(side_c_sq)))
-    gamma = acos((side_b ** 2 + side_a ** 2 - side_c_sq) / (2 * side_b * side_a))
+    # alpha angle not needed
+    # alpha = acos((side_b ** 2 + side_c ** 2 - side_a ** 2) / (2 * side_b * side_c))
+    beta = acos((side_a ** 2 + side_c ** 2 - side_b ** 2) / (2 * side_a * side_c))
+    gamma = acos((side_b ** 2 + side_a ** 2 - side_c ** 2) / (2 * side_b * side_a))
     # solve relations based on distances and angles
-    theta_2 = pi / 2 - beta - atan2(distance[2], sqrt(simplify(distance[0] ** 2 + distance[1] ** 2)))
-    theta_3 = pi / 2 - (gamma + 0.036)
-    # ik_conf = dict(zip(x_wc, position))
-    theta1 = float(theta_1.subs(ik_conf))
-    theta2 = float(theta_2.subs(ik_conf))
-    theta3 = float(theta_3.subs(ik_conf))
+    theta2 = float(pi / 2 - beta - atan2(distance[2], sqrt(distance[0] ** 2 + distance[1] ** 2)))
+    theta3 = float(pi / 2 - (gamma + 0.036))
     # update ik_conf with calculated values
     theta_1_3 = (theta1, theta2, theta3)
     ik_conf.update(dict(zip(q_s[:3], theta_1_3)))
     # calculate transform 3-End effector
     # could not get it to work with LU decomposition. Using default method(gauss elim)
-    T_3_E = ((T_s[0].subs(ik_conf) * T_s[1].subs(ik_conf) * T_s[2].subs(ik_conf)).inv()[:3, :3] *
-              T_0_eff.subs(ik_conf)[:3, :3])
+    T_0_3 = get_T_0_3(theta1, theta2, theta3)
+    T_3_E = np.dot(np.linalg.inv(T_0_3[:3, :3]), T_0_eff[:3, :3])
     # calc final thetas
     theta4 = float(atan2(T_3_E[2, 2], -T_3_E[0, 2]))
     theta5 = float(atan2(sqrt(T_3_E[0, 2] ** 2 + T_3_E[2, 2] ** 2), T_3_E[1, 2]))
@@ -183,19 +145,11 @@ def test_code(test_case):
     ## as the input and output the position of your end effector as your_ee = [x,y,z]
 
     ## (OPTIONAL) YOUR CODE HERE!
-    # total transform
-    T = Matrix.eye(4)
-    for t in T_s:
-        T *= t
     
     T_wc = Matrix.eye(4)
-    for t in T_s[:4]:
+    for t in Ts[:4]:
         T_wc *= t
-    
-    # Correction matrix in homogeneous form
-    corr = (R_z.subs(rot_3, pi) * R_y.subs(rot_2, -pi/2))
-    corr = corr.row_insert(3, Matrix([0,0,0]).transpose())
-    corr = corr.col_insert(3, Matrix([0,0,0,1]))
+
     corrected_T = (T.subs(ik_conf) * corr)
     origin = Matrix([0.0, 0.0, 0.0, 1.0])
 
@@ -251,10 +205,94 @@ def test_code(test_case):
         print ("Overall end effector offset is: %04.8f units \n" % ee_offset)
 
 
+def transform(alpha, a, d, q):
+        """
+        Helper function. Given the values for a tranformation between two joints it returns
+        the tranformation matrix
+        """
+        T = Matrix([[cos(q), -sin(q), 0.0, a],
+                    [sin(q) * cos(alpha), cos(q) * cos(alpha), -sin(alpha), -sin(alpha) * d],
+                    [sin(q) * sin(alpha), cos(q) * sin(alpha),  cos(alpha),  cos(alpha) * d],
+                    [0.0, 0.0, 0.0, 1.0]])
+        return T
 
+
+def calc_Ts(dh, table):
+    """
+    Based on DH configuration return a list of transformations from one link to the next
+    """
+    Ts = []
+    for alpha, a, d, q in table:
+        Ts.append(transform(alpha, a, d, q).subs(dh))
+    return Ts
+
+def build_dh():
+    """
+    Builds the dh table for the robot as a dictionary and a list of tuples
+    for the transformation matrices
+    """
+    # working with lists would make it easier latter on
+    q_s = symbols('q1:8', real=True)
+    d_s = symbols('d1:8', real=True)
+    a_s = symbols('a0:7', real=True)
+    alpha_s = symbols('alpha0:7', real=True)
+
+    # DH Table configuration
+    alpha = [0.0, -pi/2, 0.0, -pi/2, pi/2, -pi/2, 0.0]
+    a = [0.0, 0.35, 1.25, -0.054, 0.0, 0.0, 0.0]
+    d = [0.75, 0.0, 0.0, 1.5, 0.0, 0.0, 0.303]
+    q = list(q_s)
+    q[1] = q_s[1] - pi/2
+    q[6] = 0.0
+    dh = dict(zip(a_s, a))
+    dh.update(dict(zip(alpha_s, alpha)))
+    dh.update(dict(zip(d_s, d)))
+    dh.update(dict(zip(q_s, q)))
+    cols = zip(alpha_s, a_s, d_s, q_s)
+    return dh, cols
+
+def calc_orient(roll, pitch, yaw):
+    """
+    Starting from a RPY configuration, return the transformation matrix
+    """
+    R_x = np.array([[ 1, 0, 0],
+                [ 0, cos(roll), -sin(roll)],
+                [ 0, sin(roll),  cos(roll)]])
+    R_y = np.array([[ cos(pitch), 0, sin(pitch)],
+                [ 0, 1, 0],
+                [-sin(pitch), 0,  cos(pitch)]])
+    R_z = np.array([[ cos(yaw), -sin(yaw), 0],
+                [ sin(yaw),  cos(yaw), 0],
+                [ 0, 0, 1]])
+    return np.dot(R_z, np.dot(R_y,R_x))
 
 if __name__ == "__main__":
     # Change test case number for different scenarios
-    test_case_number = 2
+    test_case_number = 1
 
+
+    # Some parameters to use globaly:
+    # wrist center as homogeneous transform
+    x_wc = symbols(('x_wc', 'y_wc', 'z_wc'))
+    # Set up the math before running to avoid multiple execs
+    dh_conf, dh_table = build_dh()
+    Ts = calc_Ts(dh_conf, dh_table)
+    # convinience variable:
+    q_s = [dh_table[i][3] for i in range(len(dh_table))]
+    # precalc useful symbolic matrices:
+    T = Matrix.eye(4)
+    for t in Ts:
+        T *= t
+    # correction matrix (its constant, calc numerically and keep)
+    corr = np.zeros((4,4))
+    corr[:3, :3] = calc_orient(0, -pi/2,pi)
+    corr[3, 3] = 1
+    # base frame of reference:
+    origin = Matrix([0.0, 0.0, 0.0, 1.0])
+    # point at joint 2:
+    point2 = (Ts[0] * Ts[1] * origin)
+    get_point2 = lambdify(dh_table[0][3], point2, 'numpy')
+    T_0_3 = Ts[0] * Ts[1] * Ts[2]
+    get_T_0_3 = lambdify(q_s[0:3], T_0_3, 'numpy')
+    
     test_code(test_cases[test_case_number])
