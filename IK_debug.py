@@ -118,12 +118,10 @@ def test_code(test_case):
     (roll, pitch, yaw) = tf.transformations.euler_from_quaternion(
                 [req.poses[x].orientation.x, req.poses[x].orientation.y,
                     req.poses[x].orientation.z, req.poses[x].orientation.w])
-    print(roll, pitch, yaw)
     
     # inverse kinematics configuration:
     ik_conf = {ee_x: req.poses[x].position.x, ee_y: req.poses[x].position.y, ee_z: req.poses[x].position.z,
                roll_s: roll, pitch_s: pitch, yaw_s: yaw}
-    print(ik_conf)
 
     # Calculate position of wrist center
     # Correction of orientation difference between urdf and DH:
@@ -141,34 +139,41 @@ def test_code(test_case):
     T_s = []
     for alpha, a, d, q in zip(alpha_s, a_s, d_s, q_s):
         T_s.append(transform(alpha, a, d, q).subs(dh))
-    
-    # Transform matrix from origen to wrist
-    T_0_4 = T_s[0] * T_s[1] * T_s[2] * T_s[3]
 
     theta_1 = atan2(x_wc[1], x_wc[0])
     # Two sides of the triangle come directly from the DH table
-    side_a = 1.501 # sqrt(d4 ** 2 + a3 **2)
-    side_c = 1.25 # a2
+    side_b = 1.501 # sqrt(d4 ** 2 + a3 **2)
+    side_a = 1.25 # a2
     # point at joint 2:
-    x_p2 = (T_s[0] * origin).subs(q_s[0], theta_1)
+    x_p2 = (T_s[0] * T_s[1] * origin).subs(q_s[0], theta_1)
     # Distance vector between joint and wrist
     distance = (wrist_center - x_p2)
-    side_b = simplify((distance.transpose() * distance)[0])
+    # It is simpler to keep the square here. Apply sqrt to cos law
+    side_c_sq = simplify((distance.transpose() * distance)[0])
     # apply law of cosines to solve angles:
-    alpha = acos(((side_b ** 2) + (side_c ** 2) - (side_a ** 2)) / (2 * (side_b + side_c)))
-    beta = acos(((side_a ** 2) + (side_c ** 2) - (side_b ** 2)) / (2 * (side_a + side_c)))
-    gamma = acos(((side_b ** 2) + (side_a ** 2) - (side_c ** 2)) / (2 * (side_b + side_a)))
+    alpha = acos((side_b ** 2 + side_c_sq - side_a ** 2) / (2 * side_b * sqrt(side_c_sq)))
+    beta = acos((side_a ** 2 + side_c_sq - side_b ** 2) / (2 * side_a * sqrt(side_c_sq)))
+    gamma = acos((side_b ** 2 + side_a ** 2 - side_c_sq) / (2 * side_b * side_a))
     # solve relations based on distances and angles
-    theta_2 = pi / 2 - alpha - atan2(distance[2], sqrt(simplify(distance[0] ** 2 + distance[1] ** 2)))
-    theta_3 = pi / 2 - beta + 0.036
-    # = dict(zip(x_wc, position))
-    theta1 = theta_1.subs(ik_conf)
-    theta2 = theta_2.subs(ik_conf)
-    theta3 = theta_3.subs(ik_conf)
-    
-    theta4 = 0
-    theta5 = 0
-    theta6 = 0
+    theta_2 = pi / 2 - beta - atan2(distance[2], sqrt(simplify(distance[0] ** 2 + distance[1] ** 2)))
+    theta_3 = pi / 2 - (gamma + 0.036)
+    # ik_conf = dict(zip(x_wc, position))
+    theta1 = float(theta_1.subs(ik_conf))
+    theta2 = float(theta_2.subs(ik_conf))
+    theta3 = float(theta_3.subs(ik_conf))
+    # update ik_conf with calculated values
+    theta_1_3 = (theta1, theta2, theta3)
+    ik_conf.update(dict(zip(q_s[:3], theta_1_3)))
+    # calculate transform 3-End effector
+    # could not get it to work with LU decomposition. Using default method(gauss elim)
+    T_3_E = ((T_s[0].subs(ik_conf) * T_s[1].subs(ik_conf) * T_s[2].subs(ik_conf)).inv()[:3, :3] *
+              T_0_eff.subs(ik_conf)[:3, :3])
+    # calc final thetas
+    theta4 = float(atan2(T_3_E[2, 2], -T_3_E[0, 2]))
+    theta5 = float(atan2(sqrt(T_3_E[0, 2] ** 2 + T_3_E[2, 2] ** 2), T_3_E[1, 2]))
+    theta6 = float(atan2(-T_3_E[1, 1], T_3_E[1, 0]))
+    # update ik_conf
+    ik_conf.update(dict(zip(q_s[3:6], [float(theta4), float(theta5), float(theta6)])))
 
     ## 
     ########################################################################################
@@ -191,14 +196,14 @@ def test_code(test_case):
     corr = (R_z.subs(rot_3, pi) * R_y.subs(rot_2, -pi/2))
     corr = corr.row_insert(3, Matrix([0,0,0]).transpose())
     corr = corr.col_insert(3, Matrix([0,0,0,1]))
-    corrected_T = (T.subs(conf) * corr)
+    corrected_T = (T.subs(ik_conf) * corr)
     origin = Matrix([0.0, 0.0, 0.0, 1.0])
 
     ## End your code input for forward kinematics here!
     ########################################################################################
 
     ## For error analysis please set the following variables of your WC location and EE location in the format of [x,y,z]
-    your_wc = (T_wc * origin)[:3] # <--- Load your calculated WC values in this array
+    your_wc = (T_wc.subs(ik_conf) * origin)[:3] # <--- Load your calculated WC values in this array
     your_ee = (corrected_T * origin)[:3] # <--- Load your calculated end effector value from your forward kinematics
     ########################################################################################
 
@@ -250,6 +255,6 @@ def test_code(test_case):
 
 if __name__ == "__main__":
     # Change test case number for different scenarios
-    test_case_number = 1
+    test_case_number = 2
 
     test_code(test_cases[test_case_number])
