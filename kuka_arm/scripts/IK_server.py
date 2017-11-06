@@ -79,9 +79,9 @@ def handle_calculate_IK(req):
             theta5 = float(atan2(sqrt(T_3_E[0, 2] ** 2 + T_3_E[2, 2] ** 2), T_3_E[1, 2]))
             theta6 = float(atan2(-T_3_E[1, 1], T_3_E[1, 0]))
             # Populate response for the IK request
-            # In the next line replace theta1,theta2...,theta6 by your joint angle variables
-            joint_trajectory_point.positions = [theta1, theta2, theta3, theta4, theta5, theta6]
-            joint_trajectory_list.append(joint_trajectory_point)
+        # In the next line replace theta1,theta2...,theta6 by your joint angle variables
+        joint_trajectory_point.positions = [theta1, theta2, theta3, theta4, theta5, theta6]
+        joint_trajectory_list.append(joint_trajectory_point)
 
         rospy.loginfo("length of Joint Trajectory List: %s" % len(joint_trajectory_list))
         return CalculateIKResponse(joint_trajectory_list)
