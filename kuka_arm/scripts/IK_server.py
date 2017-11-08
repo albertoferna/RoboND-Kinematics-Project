@@ -182,9 +182,9 @@ if __name__ == "__main__":
     # Precalculate values and lambdify for speed
     # point at joint 2:
     point2 = (Ts[0] * Ts[1] * origin)
-    get_point2 = lambdify(dh_table[0][3], point2, [{'ImmutableMatrix': np.array}, 'numpy'])
+    get_point2 = lambdify(dh_table[0][3], point2, 'numpy')
     T_0_3 = Ts[0] * Ts[1] * Ts[2]
-    get_T_0_3 = lambdify(q_s[0:3], T_0_3, [{'ImmutableMatrix': np.array}, 'numpy'])
+    get_T_0_3 = lambdify(q_s[0:3], T_0_3, 'numpy')
     
 
     IK_server()
