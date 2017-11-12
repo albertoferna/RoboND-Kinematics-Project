@@ -58,8 +58,11 @@ def handle_calculate_IK(req):
             side_a = 1.25 # a2
             # point at joint 2:
             x_p2 = get_point2(theta1)
+            # x_p2 is a 4x1 matrix, we need it in position vector form:
+            #p2_position = np.array([x_p2[0][0],x_p2[1][0], x_p2[2][0]])
+            x_p2 = x_p2[:, 0]
             # Distance vector between joint and wrist
-            distance = (wc_pos - x_p2[:, 0])
+            distance = (wc_pos - x_p2)
             # calculate side c
             side_c = np.linalg.norm(distance)
             # apply law of cosines to solve angles:
@@ -179,9 +182,9 @@ if __name__ == "__main__":
     # Precalculate values and lambdify for speed
     # point at joint 2:
     point2 = (Ts[0] * Ts[1] * origin)
-    get_point2 = lambdify(dh_table[0][3], point2, 'numpy')
+    get_point2 = lambdify(dh_table[0][3], point2, [{'ImmutableMatrix': np.array}, 'numpy'])
     T_0_3 = Ts[0] * Ts[1] * Ts[2]
-    get_T_0_3 = lambdify(q_s[0:3], T_0_3, 'numpy')
+    get_T_0_3 = lambdify(q_s[0:3], T_0_3, [{'ImmutableMatrix': np.array}, 'numpy'])
     
 
     IK_server()
