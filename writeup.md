@@ -3,7 +3,7 @@
 ---
 ### General Approach
 
-Most of the description of the project is in the notebook [Writeup.ipynb](link). A would give here a summary of why I went the way I did. There is also an [static html](link) version of the same notebook
+Most of the description of the project is in the notebook [Writeup.ipynb](https://github.com/albertoferna/RoboND-Kinematics-Project/blob/master/Writeup.ipynb). A would give here a summary of why I went the way I did. There is also an [static html](https://github.com/albertoferna/RoboND-Kinematics-Project/blob/master/Writeup.html) version of the same notebook
 
 When I started trying to put together what we did in the lectures, my main struggle was to make sure I was doing the transformations correctly. The best way I found to approach it was to plot each frame of reference in 3d. Particularly important was to see what the reference points were in the urdf file versus the way frames are defined in DH notation.
 
@@ -17,4 +17,4 @@ I did a first round of optimizations. For that reason I pre-calculated some matr
 
 ### Final Video
 
-I have added a [video](link) of the pick and place gazebo world running in my local setup of ROS.
+I have added a [video](https://github.com/albertoferna/RoboND-Kinematics-Project/blob/master/Robo_ND_pick_and_place_sim.mp4) of the pick and place gazebo world running in my local setup of ROS.
